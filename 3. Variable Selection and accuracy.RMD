@@ -1,0 +1,295 @@
+---
+title: "Training the Model and Model Selection"
+author: "Patrick Murphy, Chinmay Palande, Addison Rogers"
+date: "December 6, 2017"
+output: word_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Getting the data ready for modeling
+
+```{r}
+# Clear the R environment
+rm ( list = ls())
+
+# Load the base dataset created in data processing
+base_data <- read.csv("base_data.csv", header = T)
+
+# Build Model for only numerical variables and categorical variables that do not have a corresponding numerical attribute
+
+model_data <- base_data[,-c(grep("Class",colnames(base_data)),47,3,24,44,46)]
+model_data <- cbind(model_data, base_data[,c(4,7,14,21,25,28,35,42,47)])
+model_data$home_win <- as.factor(model_data$home_win)
+
+colnames(model_data)[colSums(is.na(model_data)) > 0]
+
+## set the seed to make your partition reproductible
+set.seed(123)
+training_size <- floor(0.80 * nrow(model_data))
+train_ind <- sample(seq_len(nrow(model_data)), size = training_size)
+
+training_set <- model_data[train_ind, ]
+test_set <- model_data[-train_ind, ]
+
+colnames(model_data)
+
+initial_model<-glm(home_win ~ . , family=binomial, data=model_data)
+
+cook = cooks.distance(initial_model)
+par(mfrow=c(1,1))
+plot(cook,type="h",lwd=3,col="red", ylab = "Cook's Distance")
+```
+
+# Use lasso for model selection
+Get the optimal value of lambda using cross validation in lasso model.
+
+THe cross validatio nfunction in R gives 2 values of lambda
+1. Value of lambda that gives minimum binomial deviance (lambda.min)
+2. Value of lambda that gives binomial deviance that is 1 standard error away from the minimum lambda. This value of lambda is useful if we want to fit a simpler model without a lot of difference in the error.
+
+```{r}
+library(glmnet)
+set.seed(123)
+
+# Training and testing the datasets
+X = model.matrix( ~ .-1, training_set[1:26])
+Y = training_set[,27]
+
+Xtest = model.matrix( ~ .-1, test_set[1:26])
+Ytest = test_set[,27]
+
+# Complete data
+# X = model.matrix( ~ .-1, model_data[1:28])
+# Y = model_data[,29]
+
+# Fitting a lasso model and using cross validation to get optimal values of lambda
+
+model_lasso_cv=cv.glmnet(X, Y, family="binomial",
+                         alpha=1, nfolds=10)
+plot(model_lasso_cv)
+
+coefficients(model_lasso_cv, s="lambda.min" )
+coefficients(model_lasso_cv, s="lambda.1se" )
+
+# Get lasso predictions for lambda = lambda.1se
+lasso_predictions <- predict.cv.glmnet(model_lasso_cv, Xtest,s = ("lambda.1se"),type="class")
+# Find accuracy
+sum(lasso_predictions == Ytest)/length(lasso_predictions)
+#non-zero coefficients
+nnzero(coefficients(model_lasso_cv, s="lambda.1se" ))
+nnzero(coefficients(model_lasso_cv, s="lambda.min" ))
+
+
+# Get lasso predictions for lambda = lambda.min
+lasso_predictions <- predict.cv.glmnet(model_lasso_cv, Xtest,s = ("lambda.min"),type="class")
+# Find accuracy
+sum(lasso_predictions == Ytest)/length(lasso_predictions)
+
+# Get values of lambda.min and lambda.1se
+model_lasso_cv$lambda.1se
+model_lasso_cv$lambda.min
+
+```
+# We can also use Elastic net model to check if a better model can be predicted.
+
+```{r}
+library(glmnet)
+set.seed(123)
+
+# Fitting a elastic net model and using cross validation to get optimal values of lambda
+model_elastic=cv.glmnet(X, Y,
+                        family="binomial",
+                        alpha=0.5, nfolds=10)
+plot(model_elastic)
+
+coefficients(model_elastic, s="lambda.min" )
+coefficients(model_elastic, s="lambda.1se" )
+
+# Get lasso predictions for lambda = lambda.1se
+elastic_predictions <- predict.cv.glmnet(model_elastic, Xtest,s = ("lambda.1se"),type="class")
+# Find accuracy
+print("Accuracy of the model when lambda = lambda.1se")
+sum(elastic_predictions == Ytest)/length(elastic_predictions)
+
+
+# Get lasso predictions for lambda = lambda.min
+lasso_predictions <- predict.cv.glmnet(model_elastic, Xtest,s = ("lambda.min"),type="class")
+# Find accuracy
+print("Accuracy of the model when lambda = lambda.min")
+sum(elastic_predictions == Ytest)/length(elastic_predictions)
+
+# rm(X,Y)
+nnzero(coefficients(model_elastic, s="lambda.1se" ))
+nnzero(coefficients(model_elastic, s="lambda.min" ))
+
+# Get values of lambda.min and lambda.1se
+model_elastic$lambda.1se
+model_elastic$lambda.min
+```
+
+# Use stepAIC to select variables
+
+Using the AIC criterion to choose the model with the least AIC.
+
+```{r}
+# Null modelmodel_elastic
+null_model <- glm(home_win ~ 1 , data = model_data,family = binomial)
+
+# scale the data
+full_model <- glm(home_win ~. , data = model_data,family = binomial)
+
+full_model_interaction <- glm(home_win ~ . +
+                              Home_GK_Rating*(defencePressure + defenceAggression + defenceTeamWidth) +
+                              Away_GK_Rating*(defencePressure_away + defenceAggression_away + defenceTeamWidth_away)
+                              ,
+                              data = model_data,family = binomial)
+
+# full_model_interaction=glm(home_win ~ buildUpPlaySpeed + buildUpPlayDribblingClass + buildUpPlayPassing + buildUpPlayPositioningClass + chanceCreationPassing + chanceCreationCrossing + chanceCreationShooting + chanceCreationPositioningClass + defencePressure + defenceAggression + defenceTeamWidth + defenceDefenderLineClass +buildUpPlaySpeed_away + buildUpPlayDribblingClass_away + buildUpPlayPassing_away + buildUpPlayPositioningClass_away + chanceCreationPassing_away + chanceCreationCrossing_away + chanceCreationShooting_away + chanceCreationPositioningClass_away + defencePressure_away + defenceAggression_away + defenceTeamWidth_away + defenceDefenderLineClass_away + Home_GK_Rating + Away_GK_Rating + Home_GK_Rating*(buildUpPlaySpeed + chanceCreationPassing) + Away_GK_Rating*(defencePressure_away), family = binomial, data = model_data)
+
+# summary(full_model_interaction)
+library(MASS)
+# Variable selection using stepAIC
+
+modelStepAIC <- stepAIC(null_model,scope = list(upper = full_model,lower=null_model), trace = T, direction = "forward")
+summary(modelStepAIC)
+
+# AIC using 
+# modelStepAIC_interaction <- stepAIC(null_model,scope = list(upper = full_model_interaction,lower=null_model), trace = F, direction = "forward")
+# summary(modelStepAIC_interaction)
+
+
+```
+# Select the correct threshold value for 
+
+Now that we have three separate models selected from lasso, elasticnet and stepAIC, we can check which one gives the maximum prediction accuracy. 
+However, first we should choose an appropriate threshold that minimizes misclassification errors.
+
+```{r}
+selected_model <- modelStepAIC
+# selected_model <- modelStepAIC_interaction
+```
+
+Calculate errors at different threshold levels.
+
+```{r}
+# CV using boot
+library(boot)
+
+# Defining cost functions
+cost0.3 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.3] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+cost0.35 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.35] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+cost0.4 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.4] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+cost0.45 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.45] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+cost0.5 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.5] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+cost0.55 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.55] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+cost0.6 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.6] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+cost0.65 = function(y, pi){
+  ypred=rep(0,length(y))
+  ypred[pi>0.65] = 1
+  err = mean(abs(y-ypred))
+  return(err)
+}
+
+# Find error terms for different cost functions
+cv.err0.3 = cv.glm(model_data, selected_model,cost=cost0.3,K=10)$delta[1]
+cv.err0.35 = cv.glm(model_data, selected_model,cost=cost0.35,K=10)$delta[1]
+cv.err0.4 = cv.glm(model_data, selected_model,cost=cost0.4,K=10)$delta[1]
+cv.err0.45 = cv.glm(model_data, selected_model,cost=cost0.45,K=10)$delta[1]
+cv.err0.5 = cv.glm(model_data, selected_model,cost=cost0.5,K=10)$delta[1]
+cv.err0.55 = cv.glm(model_data, selected_model,cost=cost0.55,K=10)$delta[1]
+cv.err0.6 = cv.glm(model_data, selected_model,cost=cost0.6,K=10)$delta[1]
+cv.err0.65 = cv.glm(model_data, selected_model,cost=cost0.6,K=10)$delta[1]
+
+cv.err = c(cv.err0.35,cv.err0.35,cv.err0.4,cv.err0.45,cv.err0.5,
+           cv.err0.55,cv.err0.6,cv.err0.65)
+
+## Smallest prediction error is 0.3824
+
+plot(c(0.3, 0.35,0.4,0.45,0.5,0.55,0.6,0.65), cv.err,
+     type="l", lwd=3, xlab="Threshold", ylab="CV Classification Error")
+
+
+```
+
+The threshold value = 0.5 gives the maximum for the Using 10 fold cross validation to get the error estimate for the final selected model with given threshold
+
+```{r}
+# Full Model
+# selected_model <- full_model
+
+# selected model is using stepAIC
+selected_model <- modelStepAIC
+# interaction_model <- modelStepAIC_interaction
+
+#model selected by lasso with lambda.1se
+# selected_model <- home_win ~ buildUpPlaySpeed + buildUpPlayPositioningClass + 
+#    chanceCreationCrossing + chanceCreationShooting + chanceCreationPositioningClass + 
+#    defencePressure + defenceAggression + buildUpPlaySpeed_away + 
+#    buildUpPlayPassingClass + buildUpPlayPositioningClass_away + 
+#    chanceCreationCrossing_away + chanceCreationPositioningClass_away + 
+#    defencePressure_away + defenceAggression_away + Home_GK_Rating + 
+#    Away_GK_Rating, family = binomial, data = model_data
+
+#Interaction model: home_win ~ buildUpPlaySpeed + buildUpPlayPassing + buildUpPlayPositioningClass + chanceCreationPassing + chanceCreationCrossing + chanceCreationShooting + chanceCreationPositioningClass + defencePressure + defenceAggression + buildUpPlayPassing_away + buildUpPlayPositioningClass_away + chanceCreationCrossing_away + chanceCreationPositioningClass_away + defencePressure_away + defenceAggression_away + defenceTeamWidth_away + Home_GK_Rating + Away_GK_Rating + buildUpPlaySpeed:Home_GK_Rating + chanceCreationPassing:Home_GK_Rating + defencePressure_away:Away_GK_Rating, family = binomial, data = model_data
+
+# Cost function for a binary classifier suggested by boot package
+
+# K-fold CV K=10 (accuracy)
+model_cv <- cv.glm(model_data,selected_model,cost=cost0.5, K = 10)
+1 - model_cv$delta[1]
+
+# model_cv_interaction <- cv.glm(model_data,interaction_model,cost=cost0.5, K = 10)
+# 1 - model_cv_interaction$delta[1]
+```
+
+# Checking the event ratio
+If everything was predicted as 1, what would be the accuracy?
+
+```{r}
+sum(model_data$home_win == 1)/length(model_data$home_win)
+```
+

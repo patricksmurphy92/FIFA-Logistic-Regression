@@ -1,0 +1,125 @@
+---
+title: "Data Processing"
+author: "Patrick Murphy, Chinmay Palande, Addison Rogers"
+date: "December 6, 2017"
+output: word_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read the dataset
+
+```{r}
+# Remove all the variables from the environment if any
+rm (list = ls())
+
+# Get the data from SQLite
+library("RSQLite")
+
+# Set working directory
+# setwd("C:/Users/psmurphy92/Documents/My Documents/Georgia Tech/ISyE 6414/Project")
+
+# connect to the sqlite file
+con = dbConnect(RSQLite::SQLite(), dbname="database.sqlite")
+
+# get a list of all tables
+alltables = dbListTables(con)
+
+# get the populationtable as a data.frame
+for (table in alltables){
+  assign(table, dbGetQuery(con, paste0('select * from ',table)))
+}
+```
+
+# Process the data to get a final dataset
+Merge the team attributes with team_names to create a team dataset. Merge the team dataset with matches once with home_team and once with away_team to get attributes for both the teams.
+
+```{r}
+# Create year columns for each dataset
+Team_Attributes$year <- format(as.Date(Team_Attributes$date), "%Y")
+Match$year <- substr(Match$season,1,4)
+Player_Attributes$year <- format(as.Date(Player_Attributes$date), "%Y")
+
+# Filter only required columns and rows in the matches dataset. team attributes available only after 2010
+match_dataset <- Match[which(Match$year != "2008"), c(1:11,56,67,86:88,116)]
+match_dataset <- match_dataset[which(match_dataset$year != "2009"),]
+colnames(match_dataset)
+
+# Merge the team with team_attributes to get team name
+team_dataset <- merge(x=Team_Attributes,y=Team[,c(2,4,5)],
+                      by = c("team_api_id"), all.x = TRUE)
+
+# Check if all entries have merged
+print("# Rows not merged (Should be zero)")
+sum(is.na(team_dataset$team_short_name))
+
+# Match home team with team dataset to get all the team information corresponding to 
+match_team_home <- merge(x=match_dataset, y=team_dataset,
+                         by.x= c("home_team_api_id","year"), by.y= c("team_api_id","year"),
+                         suffixes = c("","_home"))
+
+# Check if all entries have merged
+print("# Rows not merged (Should be zero)")
+sum(is.na(match_team_home$team_short_name))
+
+#Get Goalie Attributes
+goalie_dataset <- Player_Attributes[which(Player_Attributes$year != "2008"),c(3,5,6,43)]
+goalie_dataset <- goalie_dataset[which(goalie_dataset$year != "2009"),]
+
+#Fix goalie data to only include one for each year for each player
+library(dplyr)
+goalies <- goalie_dataset %>%
+select(player_api_id, overall_rating, potential, year) %>%
+group_by(player_api_id, year) %>%
+summarise(overall_rating = max(overall_rating), potential=max(potential))
+
+
+# Match away team with team dataset to get all the team information corresponding to 
+match_team_home_away <- merge(x=match_team_home, y=team_dataset,
+                              by.x= c("away_team_api_id","year"), by.y= c("team_api_id","year"),
+                              suffixes = c("","_away"))
+
+match_team_home_away_goalie <- merge(x=match_team_home_away, y=goalies,
+                              by.x= c("home_player_1","year"), by.y= c("player_api_id","year"),
+                              suffixes = c("","_home"))
+
+match_team_home_away_goalie2 <- merge(x=match_team_home_away_goalie, y=goalies,
+                              by.x= c("away_player_1","year"), by.y= c("player_api_id","year"),
+                              suffixes = c("","_away"))
+
+# Check if all entries have merged
+print("# Rows not merged (Should be zero)")
+sum(is.na(match_team_home_away$team_short_name))
+
+# Number of rows after each stage:
+print("Original Dataset"); nrow(Match)
+print("filtered relevant rows"); nrow(match_dataset)
+print("merged with home team"); nrow(match_team_home)
+print("merged with away team"); nrow(match_team_home_away)
+
+# Remove unnecessary datasets
+final_dataset <- match_team_home_away_goalie2
+rm("match_dataset","match_team_home", "match_team_home_away", "Team","Team_Attributes","Match","match_team_home_away_goalie", "match_team_home_away_goalie2")
+rm("team_dataset", "Player_Attributes", "goalies", "goalie_dataset", "League", "Player", "Country")
+
+head(final_dataset)
+
+# Create Categorical variables if home team wins/ away team wins/ draw
+final_dataset$home_win <- as.factor(ifelse(final_dataset$home_team_goal > final_dataset$away_team_goal,1,0))
+
+# final_dataset$away_win <- ifelse(final_dataset$home_team_goal < final_dataset$away_team_goal,1,0)
+
+#####Base Data has all the categorical and numerical columns in it
+base_data <- final_dataset[,-c(1:20,42:46,68:69)]
+colnames(base_data)[43]<- "Home_GK_Rating"
+colnames(base_data)[44]<- "Home_GK_Potential"
+colnames(base_data)[45]<- "Away_GK_Rating"
+colnames(base_data)[46]<- "Away_GK_Potential"
+```
+
+```{r}
+write.csv(base_data, "base_data.csv", row.names = F)
+```
+

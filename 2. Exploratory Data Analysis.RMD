@@ -1,0 +1,98 @@
+---
+title: "Exploratory data Analysis"
+author: "Patrick Murphy, Chinmay Palande, Addison Rogers"
+date: "December 6, 2017"
+output: word_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Clear the R environment
+rm ( list = ls())
+
+# Load the base dataset created in data processing
+base_data <- read.csv("base_data.csv", header = T)
+
+#Exploratory Analysis- Assess linearity and Constant Variance with scatterplot Matrix
+
+library(car)
+
+scatterplotMatrix(~ buildUpPlaySpeed + buildUpPlayPassing, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ chanceCreationPassing + chanceCreationCrossing + chanceCreationShooting, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ defencePressure + defenceAggression + defenceTeamWidth, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ buildUpPlaySpeed_away + buildUpPlayPassing_away, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ chanceCreationPassing_away + chanceCreationCrossing_away + chanceCreationShooting_away, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ defencePressure_away + defenceAggression_away + defenceTeamWidth_away, data = base_data, smooth = FALSE)
+scatterplotMatrix(~ Home_GK_Rating + Home_GK_Potential + Away_GK_Rating + Away_GK_Potential, data = base_data, smooth = FALSE)
+colnames(base_data)
+
+```
+
+# Plot the correlation coefficients 
+
+```{r}
+
+#Check for Multicollinearity with correlation plot- this shows no multicollinearity
+library(corrplot)
+
+numerical_data <- base_data[,-c(grep("Class",colnames(base_data)),3,24)]
+
+X = model.matrix( lm(home_win ~ ., data = numerical_data))[,-1]
+X = cbind(home_win = base_data$home_win, X)
+corrplot(cor(X), tl.cex = .6)
+rm("X")
+
+
+# Columns in the numeric dataset
+colnames(numerical_data)
+```
+
+# Response with categorical variables
+
+```{r}
+attach(base_data)
+win_buildUpPlayDribblingClass = xtabs(~home_win + buildUpPlayDribblingClass)
+barplot(prop.table(win_buildUpPlayDribblingClass),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by buildUpPlayDribbling")
+
+win_buildUpPlayPositioningClass = xtabs(~home_win + buildUpPlayPositioningClass)
+barplot(prop.table(win_buildUpPlayPositioningClass),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by buildUpPlayPositioning")
+
+win_chanceCreationPositioningClass = xtabs(~home_win + chanceCreationPositioningClass)
+barplot(prop.table(win_chanceCreationPositioningClass),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by chanceCreationPositioning")
+
+win_defenceDefenderLineClass = xtabs(~home_win + defenceDefenderLineClass)
+barplot(prop.table(win_defenceDefenderLineClass),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by defenceDefenderLine")
+
+win_buildUpPlayDribblingClass_away = xtabs(~home_win + buildUpPlayDribblingClass_away)
+barplot(prop.table(win_buildUpPlayDribblingClass_away),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by buildUpPlayDribblingAway")
+
+win_buildUpPlayPositioningClass_away = xtabs(~home_win + buildUpPlayPositioningClass_away)
+barplot(prop.table(win_buildUpPlayPositioningClass_away),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by buildUpPlayPositioningAway")
+
+win_chanceCreationPositioningClass_away = xtabs(~home_win + chanceCreationPositioningClass_away)
+barplot(prop.table(win_chanceCreationPositioningClass_away),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by chanceCreationPositioningAway")
+
+win_defenceDefenderLineClass_away = xtabs(~home_win + defenceDefenderLineClass_away)
+barplot(prop.table(win_defenceDefenderLineClass_away),axes=T,space=0.3,
+        xlab="Proportion of Loss (red) vs Win/Draw (blue)",
+        horiz=T, col=c("red","blue"),main="Result by defenceDefenderLineAway")
+
+```
+
